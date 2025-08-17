@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="margin:12px 0;">Checkout</h1>
+<div class="row" style="gap:18px; align-items:flex-start;">
+  <div class="card p16" style="flex:1;">
+    <form id="f" class="row" onsubmit="submitOrder(event)">
+      <input class="input" name="customer_name" placeholder="Full name" required/>
+      <input class="input" name="email" type="email" placeholder="Email" required/>
+      <input class="input" name="phone" placeholder="+1 ..." required/>
+      <textarea class="input" name="comment" rows="3" placeholder="Comment (optional)"></textarea>
+      <div class="right"><button class="btn" type="submit">Place order</button></div>
+    </form>
+    <p class="muted" style="margin-top:8px;">Demo: order will be saved to SQLite. Replace with email/Stripe later.</p>
+  </div>
+  <div class="card p16" style="width:420px; max-width:100%;">
+    <div class="title">Summary</div>
+    <div id="summary"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  async function fetchProducts(){ const r = await fetch("/api/products"); return r.json(); }
+  async function renderSummary(){
+    const products = await fetchProducts();
+    const map = new Map(products.map(p=>[p.id, p]));
+    const items = readCart();
+    const el = document.getElementById("summary");
+    if(!items.length){ el.innerHTML = "<p class='muted'>Your cart is empty.</p>"; return; }
+    let total = 0, html = "<table><tbody>";
+    for(const it of items){
+      const p = map.get(it.product_id); if(!p) continue;
+      const sub = it.qty * it.unit_price; total += sub;
+      html += `<tr><td>${p.title}</td><td style="text-align:right;">${it.qty} × $${it.unit_price.toFixed(2)}</td></tr>`;
+    }
+    html += `</tbody></table><div style="text-align:right;margin-top:10px;"><strong>Total: $${total.toFixed(2)}</strong></div>`;
+    el.innerHTML = html;
+  }
+  async function submitOrder(e){
+    e.preventDefault();
+    const form = new FormData(document.getElementById("f"));
+    const items = readCart();
+    if(!items.length){ showAlert("Cart is empty."); return; }
+    const payload = {
+      customer_name: form.get("customer_name"),
+      email: form.get("email"),
+      phone: form.get("phone"),
+      currency: "USD",
+      comment: form.get("comment") || null,
+      items
+    };
+    const r = await fetch("/api/checkout", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify(payload) });
+    if(!r.ok){ const t = await r.text(); showAlert("Checkout failed: " + t); return; }
+    saveCart([]); window.location = "/checkout/success";
+  }
+  renderSummary();
+</script>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="margin:12px 0;">Admin</h1>
+<div class="row" style="gap:18px; align-items:flex-start;">
+  <div class="card p16" style="flex:1;">
+    <div class="title">Products</div>
+    <table>
+      <thead><tr><th>#</th><th>Title</th><th>Slug</th><th>Price (USD)</th><th>Actions</th></tr></thead>
+      <tbody>
+        {% for p in products %}
+        <tr>
+          <td>{{ p.id }}</td>
+          <td>{{ p.title }}</td>
+          <td>{{ p.slug }}</td>
+          <td>${{ '%.2f'|format(p.price_usd) }}</td>
+          <td>
+            <form method="post" action="{{ url_for('admin_delete', pid=p.id) }}" onsubmit="return confirm('Delete?')">
+              <button class="btn outline" type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card p16" style="width:420px; max-width:100%;">
+    <div class="title">Add product</div>
+    <form method="post" action="{{ url_for('admin_add') }}" class="row">
+      <input class="input" name="title" placeholder="Title" required/>
+      <input class="input" name="slug" placeholder="slug-like-this" required/>
+      <input class="input" name="price_usd" type="number" step="0.01" placeholder="Price USD" required/>
+      <input class="input" name="image_url" placeholder="Image URL" required/>
+      <textarea class="input" name="short_desc" rows="3" placeholder="Short description" required></textarea>
+      <div class="right"><button class="btn" type="submit">Save</button></div>
+    </form>
+  </div>
+</div>
+{% endblock %}

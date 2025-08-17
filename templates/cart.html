@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="margin:12px 0;">Your cart</h1>
+<div id="cartRoot" class="card p16"></div>
+<div class="row" style="margin-top:12px; justify-content:flex-end;">
+  <a href="{{ url_for('checkout_page') }}" class="btn">Proceed to checkout</a>
+  <button class="btn outline" onclick="clearCart()">Clear</button>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  let animId;
+  async function fetchProducts(){ const r = await fetch("/api/products"); return r.json(); }
+  function clearCart(){ saveCart([]); render(); }
+
+  function animateTotal(from,to,el,ms=500){
+    cancelAnimationFrame(animId);
+    const start = performance.now();
+    const step = (t)=>{
+      const k = Math.min(1,(t-start)/ms);
+      const val = from + (to-from)*k;
+      el.textContent = `$${val.toFixed(2)}`;
+      if(k<1) animId = requestAnimationFrame(step);
+    };
+    animId = requestAnimationFrame(step);
+  }
+
+  async function render(){
+    const products = await fetchProducts();
+    const map = new Map(products.map(p=>[p.id, p]));
+    const items = readCart();
+    const root = document.getElementById("cartRoot");
+    if(!items.length){ root.innerHTML = "<p class='muted'>Cart is empty.</p>"; return; }
+    let total = 0;
+    let html = "<table><thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Subtotal</th><th></th></tr></thead><tbody>";
+    for(const it of items){
+      const p = map.get(it.product_id);
+      if(!p) continue;
+      const sub = it.qty * it.unit_price;
+      total += sub;
+      html += `<tr>
+        <td>${p.title}</td>
+        <td>${it.qty}</td>
+        <td>$${it.unit_price.toFixed(2)}</td>
+        <td>$${sub.toFixed(2)}</td>
+        <td><button class="btn outline" onclick="removeItem(${p.id})">Remove</button></td>
+      </tr>`;
+    }
+    html += `</tbody></table>
+      <div style="text-align:right;margin-top:10px;">
+        <strong>Total: <span id="totalAnim">$0.00</span></strong>
+      </div>`;
+    root.innerHTML = html;
+    const el = document.getElementById("totalAnim");
+    animateTotal(0,total,el,600);
+  }
+  function removeItem(id){
+    let items = readCart().filter(x=>x.product_id!==id);
+    saveCart(items); render();
+  }
+  render();
+</script>
+{% endblock %}

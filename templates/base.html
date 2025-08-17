@@ -1,0 +1,99 @@
+{% set title = title or "CraftNest" %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{{ title }}</title>
+  <meta name="description" content="CraftNest — starter e-commerce template for the US market (FastAPI, USD)."/>
+  <meta property="og:title" content="CraftNest — Starter E-commerce (USD)"/>
+  <meta property="og:description" content="Clean, mobile-friendly FastAPI shop template. USD-only, ready for Flippa."/>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <header>
+    <div class="container row" style="justify-content: space-between;">
+      <div class="brand">
+        <div class="logo">CN</div>
+        <div>
+          <div style="font-weight:700">CraftNest</div>
+          <div class="muted" style="font-size:12px">US-ready · English · USD only</div>
+        </div>
+      </div>
+      <div class="row">
+        <a href="{{ url_for('index') }}" class="pill">Home</a>
+        <a href="{{ url_for('cart_page') }}" class="pill">Cart <span id="cartCount" class="pill" style="margin-left:6px;">0</span></a>
+        <a href="{{ url_for('admin_page') }}" class="pill">Admin</a>
+        <button id="themeToggle" class="pill" title="Toggle theme">☀︎/☾</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <div class="container footer">
+    © <span id="year"></span> CraftNest · Starter template for Flippa (USD only)
+  </div>
+
+  <dialog id="alertDialog">
+    <div class="dialog-head"><strong>Notice</strong><form method="dialog"><button class="btn outline">Close</button></form></div>
+    <div class="dialog-body" id="alertBody"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite">Added to cart</div>
+
+  <script>
+    // ===== Cart
+    const cartKey = "craftnest_cart";
+    const $ = s => document.querySelector(s);
+
+    function readCart(){ try{ return JSON.parse(localStorage.getItem(cartKey)) || []; }catch{ return []; } }
+    function saveCart(items){ localStorage.setItem(cartKey, JSON.stringify(items)); syncCount(); }
+    function syncCount(){
+      const items = readCart();
+      const count = items.reduce((a,b)=>a + (b.qty||0), 0);
+      const el = document.getElementById("cartCount");
+      if(el){ el.textContent = count; if(count){ el.classList.add("cart-badge-shake"); setTimeout(()=>el.classList.remove("cart-badge-shake"), 420);} }
+    }
+
+    function showToast(msg="Added to cart"){
+      const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+      setTimeout(()=>t.classList.remove("show"), 1200);
+    }
+    function showAlert(msg){
+      const d = document.getElementById("alertDialog");
+      document.getElementById("alertBody").textContent = msg;
+      d.showModal();
+    }
+    function addToCart(product_id, qty, unit_price){
+      const items = readCart();
+      const i = items.findIndex(x=>x.product_id===product_id);
+      if(i>=0){ items[i].qty += qty; } else { items.push({product_id, qty, unit_price}); }
+      saveCart(items); showToast("Added to cart");
+    }
+
+    // Year
+    document.getElementById("year").textContent = new Date().getFullYear(); syncCount();
+
+    // Reveal on scroll
+    const observer = new IntersectionObserver((entries)=>{
+      entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add("is-visible"); observer.unobserve(e.target);} });
+    }, { threshold: 0.1 });
+    document.querySelectorAll(".reveal").forEach(el=>observer.observe(el));
+
+    // Theme toggle
+    const root = document.documentElement; const THEME_KEY = "craftnest_theme";
+    function applyTheme(v){ if(v==="dark"){ root.classList.add("dark"); } else { root.classList.remove("dark"); } }
+    applyTheme(localStorage.getItem(THEME_KEY) || "light");
+    document.getElementById("themeToggle").onclick = ()=>{
+      const next = root.classList.contains("dark") ? "light" : "dark";
+      applyTheme(next); localStorage.setItem(THEME_KEY, next);
+    };
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>
