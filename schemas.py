@@ -1,10 +1,12 @@
-from typing import List, Literal
 from pydantic import BaseModel, EmailStr, Field
+from typing import List, Literal
+
 
 class CartItem(BaseModel):
-    product_id: int
+    prod_id: int
     qty: int
     unit_price: float  # USD
+
 
 class CheckoutRequest(BaseModel):
     customer_name: str = Field(min_length=2)

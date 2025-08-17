@@ -1,44 +1,50 @@
-from fastapi import FastAPI, Request, Depends, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi import FastAPI, Request, Depends, Form, status
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlmodel import Session, select
 
-from .db import init_db, get_session, engine
-from .models import Product, Order, OrderItem
-from .seed import seed_products
-from .auth import admin_guard
-from .schemas import CheckoutRequest
+from sqlmodel import select, Session
+from typing import List, Optional
+import os
+
+from db import init_db, get_session
+from models import Product
+from auth import admin_guard
+from seed import ensure_seed
 
 app = FastAPI(title="CraftNest")
 
 # static & templates
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 
 
 @app.on_event("startup")
-def on_startup() -> None:
-    """Create tables and seed demo products on first run."""
+def _startup():
     init_db()
-    with Session(engine) as s:
-        seed_products(s)
+    with get_session() as s:
+        ensure_seed(s)
 
 
-# ===================== PAGES =====================
-
+# ----------------- PAGES -----------------
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, session: Session = Depends(get_session)):
-    products = session.exec(select(Product)).all()
-    return templates.TemplateResponse("index.html", {"request": request, "products": products})
+def home(request: Request, session: Session = Depends(get_session)):
+    products = session.exec(select(Product).order_by(Product.id)).all()
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "products": products, "currency": "USD"},
+    )
 
 
 @app.get("/product/{slug}", response_class=HTMLResponse)
 def product_page(slug: str, request: Request, session: Session = Depends(get_session)):
-    p = session.exec(select(Product).where(Product.slug == slug)).first()
-    if not p:
-        return RedirectResponse(url="/")
-    return templates.TemplateResponse("product.html", {"request": request, "p": p})
+    product = session.exec(select(Product).where(Product.slug == slug)).first()
+    if not product:
+        return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
+    return templates.TemplateResponse(
+        "product.html",
+        {"request": request, "p": product, "currency": "USD"},
+    )
 
 
 @app.get("/cart", response_class=HTMLResponse)
@@ -56,88 +62,48 @@ def checkout_success(request: Request):
     return templates.TemplateResponse("checkout_success.html", {"request": request})
 
 
-# ===================== ADMIN (HTTP Basic) =====================
-
-@app.get("/admin", response_class=HTMLResponse)
-def admin_page(
-    request: Request,
-    session: Session = Depends(get_session),
-    _: bool = Depends(admin_guard),
-):
-    products = session.exec(select(Product)).all()
-    return templates.TemplateResponse("admin.html", {"request": request, "products": products})
+# ----------------- API -----------------
+@app.get("/api/products", response_model=List[Product])
+def api_products(session: Session = Depends(get_session)):
+    return session.exec(select(Product).order_by(Product.id)).all()
 
 
-@app.post("/admin/add")
+# ----------------- ADMIN -----------------
+@app.get("/admin", response_class=HTMLResponse, name="admin")
+def admin(request: Request, user=Depends(admin_guard), session: Session = Depends(get_session)):
+    products = session.exec(select(Product).order_by(Product.id)).all()
+    return templates.TemplateResponse(
+        "admin.html",
+        {"request": request, "products": products, "user": user},
+    )
+
+
+@app.post("/admin/add", name="admin_add")
 def admin_add(
     title: str = Form(...),
     slug: str = Form(...),
     price_usd: float = Form(...),
     image_url: str = Form(...),
     short_desc: str = Form(...),
+    user=Depends(admin_guard),
     session: Session = Depends(get_session),
-    _: bool = Depends(admin_guard),
 ):
-    session.add(
-        Product(
-            title=title,
-            slug=slug,
-            price_usd=price_usd,
-            image_url=image_url,
-            short_desc=short_desc,
-        )
-    )
+    exists = session.exec(select(Product).where(Product.slug == slug)).first()
+    if exists:
+        # просто вернёмся на /admin — в реале можно показать флэш-сообщение
+        return RedirectResponse("/admin", status_code=status.HTTP_302_FOUND)
+
+    p = Product(title=title, slug=slug, price_usd=price_usd,
+                image_url=image_url, short_desc=short_desc)
+    session.add(p)
     session.commit()
-    return RedirectResponse(url="/admin", status_code=303)
+    return RedirectResponse("/admin", status_code=status.HTTP_302_FOUND)
 
 
-@app.post("/admin/delete/{pid}")
-def admin_delete(
-    pid: int,
-    session: Session = Depends(get_session),
-    _: bool = Depends(admin_guard),
-):
+@app.post("/admin/delete/{pid}", name="admin_delete")
+def admin_delete(pid: int, user=Depends(admin_guard), session: Session = Depends(get_session)):
     p = session.get(Product, pid)
     if p:
         session.delete(p)
         session.commit()
-    return RedirectResponse(url="/admin", status_code=303)
-
-
-# ===================== API =====================
-
-@app.get("/api/products")
-def api_products(session: Session = Depends(get_session)):
-    products = session.exec(select(Product)).all()
-    return products
-
-
-@app.post("/api/checkout")
-def api_checkout(payload: CheckoutRequest, session: Session = Depends(get_session)):
-    if not payload.items:
-        return JSONResponse({"error": "No items"}, status_code=400)
-
-    total = sum(i.qty * i.unit_price for i in payload.items)
-
-    order = Order(
-        customer_name=payload.customer_name,
-        email=payload.email,
-        phone=payload.phone,
-        currency=payload.currency,
-        total_amount=total,
-    )
-    session.add(order)
-    session.commit()
-
-    for it in payload.items:
-        session.add(
-            OrderItem(
-                order_id=order.id,
-                product_id=it.product_id,
-                qty=it.qty,
-                unit_price=it.unit_price,
-            )
-        )
-    session.commit()
-
-    return {"ok": True, "order_id": order.id}
+    return RedirectResponse("/admin", status_code=status.HTTP_302_FOUND)
